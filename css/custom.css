@@ -1,0 +1,10 @@
+/* 1. 設定暗黑模式下的基礎背景色，防止整個頁面閃爍淺色 */
+html[data-theme='dark'] {
+  background: #1c1c1e; /* 使用一個基礎的深色，避免淺藍色來自 body */
+}
+
+/* 2. (關鍵) 直接鎖定頂部橫幅和它的遮罩層，強制設定預載背景色 */
+#page-header,
+#page-header::before {
+  background-color: #3d3b38 !important;
+}

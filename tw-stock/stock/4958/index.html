@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台股法人動向</title>
+<base href="/tw-stock/">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">台股法人動向<span id="dataDate" class="muted"></span></div>
+  <nav class="tabs" role="tablist">
+    <a href="./" data-tab="summary" class="active">每日摘要</a>
+    <a href="stocks" data-tab="stocks">個股</a>
+    <a href="sectors" data-tab="sectors">板塊</a>
+    <a href="weights" data-tab="weights">權值股</a>
+    <a href="etf" data-tab="etf">ETF 持股</a>
+    <a href="signals" data-tab="signals">主力訊號</a>
+    <a href="research" data-tab="research">個股研究</a>
+  </nav>
+</header>
+
+<section class="controls" id="controls">
+  <div class="seg" id="daysSeg" aria-label="期間">
+    <button data-days="1" class="active">近1日</button>
+    <button data-days="5">近5日</button>
+    <button data-days="10">近10日</button>
+  </div>
+  <div class="seg" id="invSeg" aria-label="法人">
+    <button data-inv="total" class="active">三大法人</button>
+    <button data-inv="foreign">外資</button>
+    <button data-inv="trust">投信</button>
+    <button data-inv="dealer">自營商</button>
+  </div>
+  <div class="seg only-etf" id="kindSeg" aria-label="ETF 類型">
+    <button data-kind="" class="active">全部</button>
+    <button data-kind="active">主動式</button>
+    <button data-kind="passive">被動式</button>
+  </div>
+  <div class="seg only-stocks" id="orderSeg">
+    <button data-order="buy" class="active">買超</button>
+    <button data-order="sell">賣超</button>
+  </div>
+  <select id="industrySel" class="only-stocks"><option value="">全部產業</option></select>
+  <input id="searchBox" class="only-stocks" type="search" placeholder="代號或名稱">
+</section>
+
+<main id="view"></main>
+
+<dialog id="detail">
+  <div class="dlg-head"><h3 id="detailTitle"></h3><button id="detailClose" aria-label="關閉">✕</button></div>
+  <div id="detailBody"></div>
+</dialog>
+
+<footer class="muted">資料來源：臺灣證券交易所公開資料（T86、BFI82U、MI_INDEX、上市公司基本資料）。
+個股與板塊金額為「買賣超股數 × 收盤價」估算；大盤金額為證交所公布值。權值股為市值前 50 名（約當台灣 50）。
+ETF 持股：主動式取自 <a href="https://github.com/nctuwanglin/active-etf">active-etf</a> 彙整的各投信公告，被動式取自各投信申購買回清單。僅供參考，非投資建議。</footer>
+<!-- 依序載入：core 最先、main 最後（一般 script 共用全域範圍，檔案之間可以直接呼叫） -->
+<script>window.TWSTOCK = {"base": "/tw-stock/", "static": true, "exportedAt": "2026-09-29T01:48:57"};</script>
+<script src="js/core.js"></script>
+<script src="js/router.js"></script>
+<script src="js/components.js"></script>
+<script src="js/pages/summary.js"></script>
+<script src="js/pages/market.js"></script>
+<script src="js/pages/etf.js"></script>
+<script src="js/pages/signals.js"></script>
+<script src="js/pages/research.js"></script>
+<script src="js/stock-dialog.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

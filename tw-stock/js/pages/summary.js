@@ -2,7 +2,7 @@
 
 // ---------- 各頁 ----------
 async function renderSummary() {
-  const s = await api("summary");
+  const [s, dv] = await Promise.all([api("summary"), api("derivatives")]);
   if (!s) return (view.innerHTML = `<div class="empty">資料庫還沒有資料，請先執行 <code>python -m twstock.ingest</code></div>`);
   const m = s.market || {};
   const kpi = (label, v, sub = "") => `<div class="card kpi"><div class="label">${label}</div>
@@ -15,6 +15,7 @@ async function renderSummary() {
         <div class="sub ${cls(idx?.change)}">${idx ? `${signed(idx.change.toFixed(2))}（${pct(idx.change_pct)}）` : ""}</div></div>
       ${kpi("外資", m.foreign)}${kpi("投信", m.trust)}${kpi("自營商", m.dealer)}${kpi("三大法人合計", m.total)}
     </div>
+    ${derivativesCard(dv)}
     <div class="grid">
       <div class="card"><h3>今日重點</h3><ul class="hl">${s.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul></div>
       <div class="card"><h3>近 ${s.market_series.length} 日大盤法人買賣超（億）</h3>

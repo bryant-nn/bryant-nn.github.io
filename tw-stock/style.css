@@ -133,3 +133,12 @@ tr.self td { background: color-mix(in srgb, var(--accent) 10%, transparent); fon
 
 /* 公開快照版：隱藏需要後端的功能 */
 .static #industrySel, .static #searchBox, .static [data-watch] { display: none; }
+.run-status { font-size: 12px; margin-left: 10px; text-decoration: none; color: var(--muted); font-weight: 400; }
+.run-status.warn { color: #b7791f; } .run-status.fail { color: var(--up); font-weight: 600; }
+ul.checks li.info { color: var(--muted); }
+ul.checks .badge { font-size: 10px; font-weight: 400; }
+sup.ref { font-size: 10px; color: var(--accent, #7aa2ff); cursor: help; margin-left: 1px; }
+li.unsupported { opacity: .7; }
+ol.facts { font-size: 12px; color: var(--muted); padding-left: 1.2em; }
+.report details summary { cursor: pointer; }
+.nowrap { white-space: nowrap; }

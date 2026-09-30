@@ -33,7 +33,7 @@ async function renderResearchIndex() {
           <td class="num">${r.close ?? "-"}</td><td class="num ${cls(r.chg_pct)}">${pct(r.chg_pct)}</td>
           <td class="num ${cls(r.revenue?.yoy_pct)}">${r.revenue ? `${pct(r.revenue.yoy_pct)} <small class="muted">${esc(r.revenue.ym.slice(2))}</small>` : "-"}</td>
           <td class="num">${r.factset?.factset_target ? `${num(r.factset.factset_target, 0)} <small class="${cls(r.upside_pct)}">${pct(r.upside_pct)}</small>` : "-"}</td>
-          <td class="num">${r.score ?? "-"} / 7 ${r.warnings.length ? `<span class="badge warn" title="${esc(r.warnings.join("、"))}">⚠ ${r.warnings.length}</span>` : ""}</td>
+          <td class="num">${r.score ?? "-"} / ${r.max_score ?? "-"} ${r.warnings.length ? `<span class="badge warn" title="${esc(r.warnings.join("、"))}">⚠ ${r.warnings.length}</span>` : ""}</td>
           <td>${r.report ? `<span class="badge ${RATING_CLS[r.report.rating] || "kind"}">${esc(r.report.rating)}</span> <small class="muted">${esc(r.report.created_at.slice(5, 10))}</small>` : '<span class="muted">-</span>'}</td>
           <td>${r.updates.map((u) => `<span class="badge new">${esc(u)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>`}
       <div class="note">「近期更新」：5 天內公布新月營收、7 天內有新的 FactSet 調查、3 天內有重大訊息。</div></div>`;
@@ -139,9 +139,10 @@ async function renderResearchPage(code, reportId) {
       ${kpi(`${lastQ ? lastQ.period : ""} EPS`, lastQ ? num(lastQ.eps) : "-", lastQ ? `近四季 ${num(lastQ.ttm_eps)}・毛利率 ${num(lastQ.gross_margin)}%` : "尚無資料")}
       ${kpi("本益比", b ? `${b.current} 倍` : d.valuation?.pe ? `${d.valuation.pe} 倍` : "-", b ? `一年中位數 ${b.median} 倍` : "")}
       ${kpi("FactSet 目標價", fs?.factset_target ? num(fs.factset_target, 0) : "-", fs ? `${pct(upside)}・${fs.factset_analysts ?? "?"} 位分析師` : "尚無調查", cls(upside))}
-      ${kpi("主力進場跡象", `${d.chips.score} / 7`, d.chips.warnings.length ? `⚠ ${d.chips.warnings.map((w) => w.label).join("、")}` : "無警示")}
+      ${kpi("主力進場跡象", `${d.chips.score} / ${d.chips.max_score}`, d.chips.warnings.length ? `⚠ ${d.chips.warnings.map((w) => w.label).join("、")}` : "無警示")}
     </div>
-    <div id="reportBox">${reportHtml(d)}</div>
+    <div id="reportBox">${reportHtml(d)}
+    ${committeeHtml(d)}</div>
     <div class="grid grid-2" style="margin-top:12px">
       <div class="card"><h3>月營收 <span class="muted" style="font-weight:400">億元</span></h3>
         ${rev.length ? `${columns(rev.map((r) => ({ date: r.ym, v: r.revenue * 1000 })), "v")}
@@ -189,8 +190,7 @@ async function renderResearchPage(code, reportId) {
         ${d.announcements.length ? `<ul class="news">${d.announcements.map((a) => `<li><small class="muted">${esc(a.date)}</small> <span title="${esc(a.detail)}">${esc(a.subject)}</span></li>`).join("")}</ul>`
           : `<div class="muted">近期沒有（重大訊息從開始執行每日更新後累積）</div>`}</div>
       <div class="card"><h3>籌碼摘要</h3>
-        <ul class="checks">${d.chips.checks.map((x) => `<li class="${x.ok ? "ok" : ""}">${x.ok ? "✓" : "·"} ${esc(x.label)}</li>`).join("")}
-          ${d.chips.warnings.map((w) => `<li class="warn">⚠ ${esc(w.label)}</li>`).join("")}</ul>
+        ${checkList(d.chips.checks, d.chips.warnings)}
         <div class="note">近 5 日主力集中度 ${d.chips.concentration_5d == null ? "-" : d.chips.concentration_5d + "%"}・
           持有的 ETF ${d.etf_holders.length} 檔。<a href="#" data-code="${esc(d.stock.code)}">看 K 線與完整籌碼 →</a></div></div>
       <div class="card"><h3>三大法人（近 10 日，張）</h3>
@@ -201,8 +201,9 @@ async function renderResearchPage(code, reportId) {
   const pick = $("#reportPick");
   if (pick) pick.addEventListener("change", (e) => renderResearchPage(code, e.target.value));
   // 報告產生中或新聞更新中：幾秒後自動重新整理
-  if (d.job?.status === "running" || d.news_refreshing)
-    researchTimer = setTimeout(() => state.tab === "research" && state.rcode === code && !$("#detail").open && renderResearchPage(code), d.job?.status === "running" ? 8000 : 5000);
+  const busy = d.job?.status === "running" || d.committee_job?.status === "running";
+  if (busy || d.news_refreshing)
+    researchTimer = setTimeout(() => state.tab === "research" && state.rcode === code && !$("#detail").open && renderResearchPage(code), busy ? 8000 : 5000);
 }
 
 view.addEventListener("click", async (e) => {
@@ -217,6 +218,13 @@ view.addEventListener("click", async (e) => {
     await fetch(`${BASE}api/watchlist/${encodeURIComponent(w.dataset.watch)}`, { method: w.dataset.watched === "1" ? "DELETE" : "POST" });
     return renderResearchPage(w.dataset.watch);
   }
+  const cm = e.target.closest("[data-committee]");
+  if (cm) {
+    cm.disabled = true;
+    const res = await fetch(`${BASE}api/research/${encodeURIComponent(cm.dataset.committee)}/committee`, { method: "POST" });
+    if (!res.ok) { const j = await res.json(); cm.disabled = false; return alert(j.error || "失敗"); }
+    return renderResearchPage(cm.dataset.committee);
+  }
   const g = e.target.closest("[data-generate]");
   if (g) {
     g.disabled = true;
@@ -225,3 +233,52 @@ view.addEventListener("click", async (e) => {
     return renderResearchPage(g.dataset.generate);
   }
 }, true);
+
+// ---------- 多角色 AI 研究會議 ----------
+const STANCE_CLS = { 偏多: "up", 中性偏多: "up", 中性: "", 中性偏空: "down", 偏空: "down" };
+function committeeHtml(d) {
+  const job = d.committee_job, ai = d.ai, c = d.committee;
+  const btn = ai.available && !STATIC
+    ? `<button class="btn" data-committee="${esc(d.stock.code)}">${c ? "重新開會" : "召開研究會議"}</button>
+       <span class="muted" style="font-size:12px">6 位 AI 成員各自發言、互相回應，主席整理；${esc(ai.model)}，約 1 分鐘，每次約 US$0.1～0.3</span>`
+    : (STATIC ? "" : `<div class="note">⚠ ${esc(ai.reason)}</div>`);
+  const head = `<h3>AI 研究會議</h3>`;
+  if (job?.status === "running")
+    return `<div class="card report">${head}<div class="empty">⏳ 開會中（${esc(job.started.slice(11))} 開始），約 1 分鐘，完成後會自動顯示…</div></div>`;
+  const fail = job?.status === "failed" ? `<div class="note down">上次開會失敗：${esc(job.error)}</div>` : "";
+  if (!c) return `<div class="card report">${head}${fail}<div class="muted" style="margin-bottom:8px">
+      量化研究員、回測工程師、訊號工程師、風險控制、市場分析師、基本面分析師各自從不同角度分析，只能引用系統編號過的事實。</div>${btn}</div>`;
+  const r = c.result, ch = r.chair, facts = Object.fromEntries(c.facts.map((f) => [f.id, f.text]));
+  const refs = (ids) => (ids || []).map((id) => `<sup class="ref" title="${esc(facts[id] || "")}">${esc(id)}</sup>`).join(" ");
+  const claim = (x) => `<li class="${x.unsupported ? "unsupported" : ""}">${esc(x.claim)} ${refs(x.facts)}${x.unsupported ? ' <span class="badge warn">無依據</span>' : ""}</li>`;
+  const stance = (s, conf) => `<span class="nowrap"><span class="badge ${STANCE_CLS[s] || "kind"}">${esc(s || "-")}</span>${conf != null ? ` <small class="muted">信心 ${conf}</small>` : ""}</span>`;
+  return `<div class="card report">${head}${fail}
+    <div class="row-between"><div><b style="font-size:17px">${stance(ch.stance, ch.confidence)} ${esc(ch.headline)}</b></div>
+      <small class="muted">${esc(c.created_at.replace("T", " ").slice(0, 16))}・${esc(c.model)}・行情 ${esc(c.data_date)}・${c.facts.length} 條事實・
+        無依據論點 <b class="${r.unsupported ? "down" : ""}">${r.unsupported}</b> 條・US$${(c.usage.estimated_usd || 0).toFixed(3)}</small></div>
+    <p>${esc(ch.conclusion)}</p>
+    <div class="grid">
+      <div><h4>共識</h4><ul>${ch.consensus.map(claim).join("")}</ul></div>
+      <div><h4>主要風險</h4><ul>${ch.key_risks.map(claim).join("")}</ul></div>
+    </div>
+    ${ch.disagreements.length ? `<h4>分歧</h4><ul>${ch.disagreements.map((x) => `<li><b>${esc(x.topic)}</b>：${esc(x.sides)}</li>`).join("")}</ul>` : ""}
+    ${ch.watch_items.length ? `<h4>接下來要追蹤</h4><table><tbody>${ch.watch_items.map((x) =>
+      `<tr><td>${esc(x.item)}</td><td class="muted">${esc(x.trigger)}</td></tr>`).join("")}</tbody></table>` : ""}
+    <h4>各成員意見</h4>
+    <div class="table-wrap"><table><thead><tr><th>成員</th><th>第一輪</th><th>第二輪</th><th>主要看法</th></tr></thead><tbody>
+      ${Object.entries(r.roles).map(([k, name]) => {
+        const o = r.opinions[k] || {}, b = r.rebuttals[k] || {};
+        return `<tr><td><b>${esc(name)}</b></td><td>${stance(o.stance, o.confidence)}</td><td>${b.stance ? stance(b.stance, b.confidence) : "-"}</td>
+          <td><details><summary>${esc(o.thesis)}</summary>
+            <div class="muted" style="margin-top:6px">論點</div><ul>${(o.points || []).map(claim).join("")}</ul>
+            <div class="muted">風險</div><ul>${(o.risks || []).map(claim).join("")}</ul>
+            ${b.responses ? `<div class="muted">第二輪回應</div><ul>${b.responses.map((x) =>
+              `<li>${x.agree ? "同意" : "反對"}${esc(x.to_role)}：${esc(x.argument)} ${refs(x.facts)}</li>`).join("")}</ul>
+              ${b.changed_because ? `<div class="note">立場變化：${esc(b.changed_because)}</div>` : ""}` : ""}
+            <div class="note">會改變看法的條件：${esc(o.would_change_mind)}</div></details></td></tr>`;
+      }).join("")}</tbody></table></div>
+    <details><summary class="muted">事實清單（${c.facts.length} 條，AI 只能引用這些）</summary>
+      <ol class="facts">${c.facts.map((f) => `<li><b>${esc(f.id)}</b> ${esc(f.text)}</li>`).join("")}</ol></details>
+    <div style="margin-top:10px">${btn}</div>
+    <div class="note">AI 會議只整理證據、不是投資建議。F 開頭是系統資料；W 開頭是 AI 網路搜尋筆記，可信度較低。滑鼠移到編號上可以看原文。</div></div>`;
+}

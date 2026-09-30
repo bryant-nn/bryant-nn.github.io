@@ -25,9 +25,8 @@ function chipsHtml(c) {
       <div class="card kpi"><div class="label">一年百分位</div><div class="value sm">${(m.pct_rank * 100).toFixed(0)}</div><div class="sub muted">近 ${m.history_days} 日成交金額</div></div>
       <div class="card kpi"><div class="label">一年區間位置</div><div class="value sm">${m.pos_1y == null ? "-" : (m.pos_1y * 100).toFixed(0) + "%"}</div><div class="sub muted">${m.low_1y} ~ ${m.high_1y}</div></div>
     </div>` : ""}
-    <h4>主力進場跡象 <span class="muted" style="font-weight:400">${c.score} / ${c.checks.length} 項</span></h4>
-    <ul class="checks">${c.checks.map((x) => `<li class="${x.ok ? "ok" : ""}">${x.ok ? "✓" : "·"} ${esc(x.label)}</li>`).join("")}
-      ${c.warnings.map((w) => `<li class="warn">⚠ ${esc(w.label)}</li>`).join("")}</ul>
+    <h4>主力進場跡象 <span class="muted" style="font-weight:400">${c.score} / ${c.max_score} 項</span></h4>
+    ${checkList(c.checks, c.warnings)}
     <div class="note">單一指標不能判斷主力動向，請綜合來看；分點資料只涵蓋每天買賣超前 15 名。</div>
     <div class="grid" style="margin-top:12px">
       <div class="card"><h3>千張大戶 ${h ? `<span class="muted" style="font-weight:400">${esc(h.date)}</span>` : ""}</h3>
@@ -73,13 +72,13 @@ async function showDetail(code, { push = true } = {}) {
   if (!d) return notFound(`股票 ${code}`, STATIC ? "公開版只收錄權值股前 50 名、追蹤清單與有 AI 報告的股票" : "");
   chipsState.data = c;
   document.title = `${d.stock.code} ${d.stock.name}｜${SITE}`;
-  $("#detailTitle").textContent = `${d.stock.code} ${d.stock.name}　${d.stock.industry_name || ""}`;
+  $("#detailTitle").textContent = `${d.stock.code} ${d.stock.name}　${d.stock.market === "TPEX" ? "上櫃・" : ""}${d.stock.industry_name || ""}`;
   const rows = d.rows;
   const series = rows.map((x) => ({ date: x.date, v: (x.total_net || 0) * (x.close || 0) }));
   $("#detailBody").innerHTML = `<div class="row-between"><span></span>
       <a href="${link("research/" + code)}" data-open-research="${esc(code)}" class="btn">個股研究頁（營收、估值、AI 報告）→</a></div>
     <div id="chipsBox">${chipsHtml(c)}</div>
-    <h4>三大法人</h4>${!rows.length ? `<div class="muted" style="margin:8px 0">沒有證交所法人資料（上櫃股票尚未收錄）</div>` : `
+    <h4>三大法人</h4>${!rows.length ? `<div class="muted" style="margin:8px 0">沒有法人資料</div>` : `
     <div class="muted" style="margin:8px 0">近 ${rows.length} 日三大法人買賣超金額（估算，億）</div>
     ${columns(series, "v")}
     <div class="table-wrap" style="margin-top:12px"><table>
@@ -88,6 +87,7 @@ async function showDetail(code, { push = true } = {}) {
         <td>${x.date}</td><td class="num ${cls(x.change)}">${x.close ?? "-"}</td>
         ${["foreign_net", "trust_net", "dealer_net", "total_net"].map((k) => `<td class="num ${cls(x[k])}">${lots(x[k])}</td>`).join("")}
         <td class="num">${x.volume ? ((x.total_net / x.volume) * 100).toFixed(1) + "%" : "-"}</td></tr>`).join("")}</tbody></table></div>`}
+    ${marginTable(d.margin)}
     ${etfHolders(d.etf)}`;
   if (!$("#detail").open) $("#detail").showModal();
   $("#detail").scrollTop = 0;
@@ -127,3 +127,22 @@ view.addEventListener("click", (e) => {
     switchTab("stocks");
   }
 });
+
+// 融資融券（張）：餘額、增減、券資比
+function marginTable(rows) {
+  if (!rows?.length) return "";
+  const n = (v) => (v == null ? "-" : v.toLocaleString());
+  const d = (v) => (v == null ? "-" : `${v > 0 ? "+" : ""}${v.toLocaleString()}`);
+  const first = rows[0], last = rows[rows.length - 1];
+  const mChg = last.margin_balance - first.margin_balance + first.margin_change;
+  return `<h4>融資融券 <span class="muted" style="font-weight:400">近 ${rows.length} 日融資 <span class="${cls(mChg)}">${d(mChg)}</span> 張</span></h4>
+    <div class="table-wrap"><table>
+      <thead><tr><th>日期</th><th class="num">收盤</th><th class="num">融資餘額</th><th class="num">融資增減</th>
+        <th class="num">融券餘額</th><th class="num">融券增減</th><th class="num">券資比</th><th class="num hide-sm">資券相抵</th></tr></thead>
+      <tbody>${rows.slice().reverse().map((x) => `<tr><td>${x.date}</td><td class="num">${x.close ?? "-"}</td>
+        <td class="num">${n(x.margin_balance)}</td><td class="num ${cls(x.margin_change)}">${d(x.margin_change)}</td>
+        <td class="num">${n(x.short_balance)}</td><td class="num ${cls(x.short_change)}">${d(x.short_change)}</td>
+        <td class="num">${x.short_ratio == null ? "-" : x.short_ratio + "%"}</td><td class="num hide-sm">${n(x.offset_qty)}</td></tr>`).join("")}
+      </tbody></table></div>
+    <div class="note">單位：張。融資增加代表散戶用借錢買進；券資比高時，軋空的可能性較大。</div>`;
+}

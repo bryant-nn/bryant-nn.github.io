@@ -16,7 +16,7 @@ function stockTable(rows, { inv, showRank = false, showWeight = false } = {}) {
     </tr></thead><tbody>
     ${rows.map((r) => `<tr data-code="${esc(r.code)}">
       ${showRank ? `<td>${r.rank}</td>` : ""}
-      <td class="name">${esc(r.code)}<small>${esc(r.name)}</small></td>
+      <td class="name">${esc(r.code)}${otcTag(r.market)}<small>${esc(r.name)}</small></td>
       <td class="hide-sm muted">${esc(r.industry)}</td>
       ${showWeight ? `<td class="num">${r.weight_pct.toFixed(2)}%</td>` : ""}
       <td class="num">${r.close ?? "-"}</td>
@@ -51,11 +51,11 @@ function divergingBars(items, labelKey, valueKey, fmt = (v) => signed(yi(v, 1)) 
   }).join("");
 }
 
-function columns(series, key) {
+function columns(series, key, fmt = (v) => `${signed(yi(v, 1))} 億`) {
   const max = Math.max(1, ...series.map((x) => Math.abs(x[key] || 0)));
   return `<div class="cols">${series.map((x) => {
       const v = x[key] || 0, h = (Math.abs(v) / max) * 100;
-      return `<div class="c" title="${x.date} ${signed(yi(v, 1))} 億">
+      return `<div class="c" title="${x.date} ${fmt(v)}">
         <span style="height:${h}%;background:var(--${v >= 0 ? "up" : "down"})"></span></div>`;
     }).join("")}</div>
     <div class="cols-labels">${series.map((x) => `<span>${x.date.slice(5)}</span>`).join("")}</div>`;
@@ -86,5 +86,47 @@ function klineSvg(kl) {
     ${line("ma5", "#e0a100")}${line("ma20", "#7c5cff")}${line("ma60", "#1f9bd1")}
     ${labels.map(([i, d]) => `<text x="${x(i)}" y="${H + 13}" class="ax" text-anchor="middle">${d.slice(2, 7)}</text>`).join("")}
   </svg>
-  <div class="legend"><span style="color:#e0a100">━ MA5</span><span style="color:#7c5cff">━ MA20</span><span style="color:#1f9bd1">━ MA60</span><span class="muted">下方為成交量</span></div>`;
+  <div class="legend"><span style="color:#e0a100">━ MA5</span><span style="color:#7c5cff">━ MA20</span><span style="color:#1f9bd1">━ MA60</span><span class="muted">價格已還原權息・下方為成交量</span></div>`;
+}
+
+// 主力進場跡象清單：✓ 計分項目、ⓘ 不計分項目，旁邊標出最近一次回測的結論
+const EVIDENCE_CLS = { 有效: "up", 反向: "down", 未證實: "kind", 樣本不足: "kind", 尚無法回測: "kind" };
+function checkList(checks, warnings) {
+  const ev = (x) => (x.evidence ? ` <span class="badge ${EVIDENCE_CLS[x.evidence] || "kind"}" title="最近一次回測">${esc(x.evidence)}</span>` : "");
+  return `<ul class="checks">${checks.map((x) => x.role === "info"
+      ? `<li class="info">ⓘ ${esc(x.label)}${x.ok ? "（符合）" : ""}${ev(x)}<br><small class="muted">${esc(x.note)}</small></li>`
+      : `<li class="${x.ok ? "ok" : ""}">${x.ok ? "✓" : "·"} ${esc(x.label)}${ev(x)}</li>`).join("")}
+    ${warnings.map((w) => `<li class="warn">⚠ ${esc(w.label)}</li>`).join("")}</ul>`;
+}
+
+// 上櫃股票的小標記
+const otcTag = (market) => (market === "TPEX" ? ` <span class="badge kind" title="上櫃">櫃</span>` : "");
+
+// 期貨選擇權法人與融資餘額（每日摘要）
+function derivativesCard(d) {
+  if (!d || (!d.futures.length && !d.margin.length)) return "";
+  const f = d.futures, last = f[f.length - 1], prev = f[f.length - 2];
+  const o = d.options[d.options.length - 1];
+  const m = d.margin[d.margin.length - 1];
+  const oi = (v) => (v == null ? "-" : `${v > 0 ? "+" : ""}${v.toLocaleString()}`);
+  const chg = (a, b, k) => (a && b && a[k] != null && b[k] != null ? a[k] - b[k] : null);
+  const kpi = (label, v, unit, sub) => `<div class="card kpi"><div class="label">${label}</div>
+      <div class="value ${cls(v)}">${v == null ? "-" : oi(v)}<small> ${unit}</small></div><div class="sub">${sub}</div></div>`;
+  const fc = chg(last, prev, "foreign");
+  return `<h3>期貨選擇權與融資 <span class="muted" style="font-weight:400">${esc(last?.date || m?.date || "")}</span></h3>
+    <div class="kpis">
+      ${last ? kpi("外資台指期淨未平倉", last.foreign, "口",
+        `較前日 <span class="${cls(fc)}">${oi(fc)}</span>｜約當大台（含小台、微台）${oi(last.foreign_equiv)}`) : ""}
+      ${last ? kpi("投信台指期淨未平倉", last.trust, "口", `自營商 ${oi(last.dealer)}`) : ""}
+      ${o ? `<div class="card kpi"><div class="label">外資臺指選擇權淨未平倉</div>
+        <div class="value" style="font-size:18px">買權 <span class="${cls(o.call_oi)}">${oi(o.call_oi)}</span>／賣權 <span class="${cls(o.put_oi)}">${oi(o.put_oi)}</span><small> 口</small></div>
+        <div class="sub">淨金額 買權 ${signed(qianToYi(o.call_amt))} 億、賣權 ${signed(qianToYi(o.put_amt))} 億</div></div>` : ""}
+      ${m ? `<div class="card kpi"><div class="label">上市融資餘額</div>
+        <div class="value">${yi(m.amount, 0)}<small> 億</small></div>
+        <div class="sub">較前日 <span class="${cls(m.change)}">${m.change == null ? "-" : signed(yi(m.change, 1))} 億</span></div></div>` : ""}
+    </div>
+    ${f.length > 2 ? `<div class="card" style="margin-bottom:12px"><h3>外資台指期淨未平倉每日增減（口）</h3>
+      ${columns(f.slice(1).map((x, i) => ({ date: x.date, v: x.foreign - f[i].foreign })), "v", (v) => oi(v) + " 口")}
+      <div class="note">淨未平倉＝多單口數－空單口數，目前 ${oi(last.foreign)} 口；負數代表淨空單（常用來避險現貨部位，不一定是看空）。
+        紅色＝空單減少或多單增加。</div></div>` : ""}`;
 }

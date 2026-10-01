@@ -62,7 +62,7 @@ function columns(series, key, fmt = (v) => `${signed(yi(v, 1))} 億`) {
 }
 
 // ---------- K 線 ----------
-function klineSvg(kl) {
+function klineSvg(kl, ind = "") {
   if (kl.length < 2) return `<div class="muted">K 線資料不足，請執行 <code>python -m twstock.ingest --history 250</code></div>`;
   const W = 900, PH = 240, VH = 70, GAP = 8, H = PH + GAP + VH, L = 48, R = 8, n = kl.length;
   const hi = Math.max(...kl.map((k) => k.high)), lo = Math.min(...kl.map((k) => k.low));
@@ -84,6 +84,7 @@ function klineSvg(kl) {
       <rect x="${x(i) - bw / 2}" y="${Math.min(y(k.open), y(k.close))}" width="${bw}" height="${Math.max(1, Math.abs(y(k.open) - y(k.close)))}" fill="${col(k)}"/>
       <rect x="${x(i) - bw / 2}" y="${H - ((k.volume || 0) / vmax) * VH}" width="${bw}" height="${((k.volume || 0) / vmax) * VH}" fill="${col(k)}" opacity=".55"/></g>`).join("")}
     ${line("ma5", "#e0a100")}${line("ma20", "#7c5cff")}${line("ma60", "#1f9bd1")}
+    ${ind === "bb" ? line("bb_up", "#9aa4b2") + line("bb_dn", "#9aa4b2") : ""}
     ${labels.map(([i, d]) => `<text x="${x(i)}" y="${H + 13}" class="ax" text-anchor="middle">${d.slice(2, 7)}</text>`).join("")}
   </svg>
   <div class="legend"><span style="color:#e0a100">━ MA5</span><span style="color:#7c5cff">━ MA20</span><span style="color:#1f9bd1">━ MA60</span><span class="muted">價格已還原權息・下方為成交量</span></div>`;
@@ -129,4 +130,30 @@ function derivativesCard(d) {
       ${columns(f.slice(1).map((x, i) => ({ date: x.date, v: x.foreign - f[i].foreign })), "v", (v) => oi(v) + " 口")}
       <div class="note">淨未平倉＝多單口數－空單口數，目前 ${oi(last.foreign)} 口；負數代表淨空單（常用來避險現貨部位，不一定是看空）。
         紅色＝空單減少或多單增加。</div></div>` : ""}`;
+}
+
+// 技術指標副圖：KD、RSI、MACD（布林通道畫在主圖）
+const IND = { kd: "KD(9)", rsi: "RSI(14)", macd: "MACD(12,26,9)", bb: "布林通道(20,2)" };
+function indicatorSvg(kl, ind) {
+  if (!ind || ind === "bb" || kl.length < 2) return ind === "bb" ? `<div class="legend"><span style="color:#9aa4b2">━ 布林上下軌（20 日均線 ± 2 倍標準差，畫在 K 線上）</span></div>` : "";
+  const W = 900, H = 110, L = 48, R = 8, n = kl.length;
+  const x = (i) => L + ((i + 0.5) * (W - L - R)) / n;
+  const keys = { kd: ["k", "d"], rsi: ["rsi"], macd: ["dif", "macd"] }[ind];
+  const vals = kl.flatMap((k) => [...keys, ...(ind === "macd" ? ["hist"] : [])].map((key) => k[key])).filter((v) => v != null);
+  if (!vals.length) return `<div class="muted">資料不足</div>`;
+  let hi = Math.max(...vals), lo = Math.min(...vals);
+  if (ind !== "macd") { hi = 100; lo = 0; }
+  const y = (v) => 4 + ((hi - v) / (hi - lo || 1)) * (H - 8);
+  const colors = ["#e0a100", "#7c5cff"];
+  const poly = (key, c) => { const pts = kl.map((k, i) => (k[key] == null ? null : `${x(i).toFixed(1)},${y(k[key]).toFixed(1)}`)).filter(Boolean);
+    return pts.length > 1 ? `<polyline fill="none" stroke="${c}" stroke-width="1.2" points="${pts.join(" ")}"/>` : ""; };
+  const bw = Math.max(1, ((W - L - R) / n) * 0.6);
+  const bars = ind === "macd" ? kl.map((k, i) => (k.hist == null ? "" : `<rect x="${x(i) - bw / 2}" y="${Math.min(y(0), y(k.hist))}" width="${bw}" height="${Math.max(1, Math.abs(y(k.hist) - y(0)))}" fill="var(--${k.hist >= 0 ? "up" : "down"})" opacity=".6"/>`)).join("") : "";
+  const guides = ind === "macd" ? [0] : ind === "rsi" ? [30, 70] : [20, 80];
+  const last = kl[kl.length - 1];
+  return `<svg class="kline sub" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${IND[ind]}">
+    ${guides.map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="grid-l"/><text x="${L - 4}" y="${y(g) + 3}" class="ax" text-anchor="end">${g}</text>`).join("")}
+    ${bars}${keys.map((k, j) => poly(k, colors[j])).join("")}</svg>
+    <div class="legend">${keys.map((k, j) => `<span style="color:${colors[j]}">━ ${k.toUpperCase()} ${last[k] == null ? "-" : num(last[k], 2)}</span>`).join("")}
+      ${ind === "macd" ? `<span class="muted">柱狀＝DIF−MACD</span>` : ""}</div>`;
 }

@@ -142,3 +142,11 @@ li.unsupported { opacity: .7; }
 ol.facts { font-size: 12px; color: var(--muted); padding-left: 1.2em; }
 .report details summary { cursor: pointer; }
 .nowrap { white-space: nowrap; }
+/* 訊號實驗室：公開版不能即時回測 */
+.static .tabs a[data-tab="lab"] { display: none; }
+.lab-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.lab-row select, .lab-row input { background: var(--card, #1b1f27); color: inherit; border: 1px solid var(--line, #333); border-radius: 6px; padding: 5px 8px; }
+.lab-row input { width: 90px; }
+.chip.preset { cursor: pointer; }
+.kline.sub { height: 120px; }
+.kline.spark { height: 60px; }

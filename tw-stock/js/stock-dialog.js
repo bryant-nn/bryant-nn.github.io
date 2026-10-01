@@ -1,7 +1,7 @@
 // 個股視窗：K 線、籌碼面板、三大法人、持有的 ETF；視窗內的點擊。
 
 // ---------- 籌碼面板 ----------
-let chipsState = { data: null, range: 120, bdays: 5 };
+let chipsState = { data: null, range: 120, bdays: 5, ind: "kd" };
 
 function brokerTable(rows) {
   if (!rows.length) return `<div class="muted">無</div>`;
@@ -18,7 +18,11 @@ function chipsHtml(c) {
       ${c.alerts.map((a) => `<span class="badge warn" title="${esc(a.reason || "")}">${ALERT_KIND[a.kind]} ${esc(a.date.slice(5))}${a.period ? "（" + esc(a.period) + "）" : ""}</span>`).join("")}
       ${c.patterns.map((p) => `<span class="badge ${p.key === "distribution" || p.key === "surge_down" ? "down" : "up"}">${esc(p.text)}</span>`).join("")}</div>` : ""}
     <div class="row-between"><h4>K 線</h4>${segHtml("data-kr", [[60, "3 月"], [120, "6 月"], [250, "1 年"]], chipsState.range)}</div>
-    ${klineSvg(kl)}
+    ${klineSvg(kl, chipsState.ind)}
+    <div class="row-between" style="margin-top:6px"><span class="muted" style="font-size:12px">技術指標</span>
+      ${segHtml("data-ind", Object.entries(IND), chipsState.ind)}</div>
+    ${indicatorSvg(kl, chipsState.ind)}
+    ${holdingHtml(c.holding)}
     ${m ? `<div class="kpis" style="margin-top:10px">
       <div class="card kpi"><div class="label">成交金額</div><div class="value sm">${yi(m.value)} 億</div><div class="sub muted">20 日均 ${yi(m.avg20_value)} 億</div></div>
       <div class="card kpi"><div class="label">量能倍數</div><div class="value sm ${m.ratio20 >= 2.5 ? "up" : ""}">${m.ratio20}×</div><div class="sub muted">和前 20 日平均比</div></div>
@@ -103,10 +107,11 @@ $("#detail").addEventListener("close", () => {
 $("#detailBody").addEventListener("click", (e) => {
   const res = e.target.closest("[data-open-research]");
   if (res) { e.preventDefault(); return openResearch(res.dataset.openResearch); }
-  const seg = e.target.closest("[data-kr],[data-bd]");
+  const seg = e.target.closest("[data-kr],[data-bd],[data-ind]");
   if (seg) {
     if (seg.dataset.kr) chipsState.range = Number(seg.dataset.kr);
     if (seg.dataset.bd) chipsState.bdays = Number(seg.dataset.bd);
+    if (seg.dataset.ind) chipsState.ind = seg.dataset.ind;
     $("#chipsBox").innerHTML = chipsHtml(chipsState.data);
     return;
   }
@@ -145,4 +150,26 @@ function marginTable(rows) {
         <td class="num">${x.short_ratio == null ? "-" : x.short_ratio + "%"}</td><td class="num hide-sm">${n(x.offset_qty)}</td></tr>`).join("")}
       </tbody></table></div>
     <div class="note">單位：張。融資增加代表散戶用借錢買進；券資比高時，軋空的可能性較大。</div>`;
+}
+
+// 外資持股比例與借券賣出餘額
+function holdingHtml(rows) {
+  if (!rows?.length) return "";
+  const last = rows[rows.length - 1];
+  const back = (n) => rows[Math.max(0, rows.length - 1 - n)];
+  const dp = (n) => (last.foreign_pct == null || back(n).foreign_pct == null ? null : last.foreign_pct - back(n).foreign_pct);
+  const sb = (n) => (last.sbl_balance == null || back(n).sbl_balance == null ? null : last.sbl_balance - back(n).sbl_balance);
+  const pp = (v) => (v == null ? "-" : `${v > 0 ? "+" : ""}${v.toFixed(2)} 個百分點`);
+  const series = rows.map((r) => ({ date: r.date, v: r.foreign_pct }));
+  const lo = Math.min(...series.map((s) => s.v ?? Infinity)), hi = Math.max(...series.map((s) => s.v ?? -Infinity));
+  return `<h4>外資持股與借券 <span class="muted" style="font-weight:400">${esc(last.date)}</span></h4>
+    <div class="kpis">
+      <div class="card kpi"><div class="label">外資持股比例</div><div class="value">${last.foreign_pct == null ? "-" : last.foreign_pct.toFixed(2) + "%"}</div>
+        <div class="sub">5 日 <span class="${cls(dp(5))}">${pp(dp(5))}</span>｜20 日 <span class="${cls(dp(20))}">${pp(dp(20))}</span></div></div>
+      <div class="card kpi"><div class="label">借券賣出餘額</div><div class="value">${lots(last.sbl_balance)}<small> 張</small></div>
+        <div class="sub">5 日 <span class="${cls(-(sb(5) || 0))}">${sb(5) == null ? "-" : signed(lots(sb(5)))} 張</span>（增加＝看空部位變多）</div></div>
+    </div>
+    ${rows.length > 5 && hi > lo ? `<div class="muted" style="font-size:12px">近 ${rows.length} 日外資持股比例（${lo.toFixed(2)}% ～ ${hi.toFixed(2)}%）</div>
+      <svg class="kline spark" viewBox="0 0 900 60" preserveAspectRatio="none"><polyline fill="none" stroke="#1f9bd1" stroke-width="1.5"
+        points="${series.map((s, i) => s.v == null ? "" : `${(48 + (i + 0.5) * 844 / series.length).toFixed(1)},${(4 + (hi - s.v) / (hi - lo) * 52).toFixed(1)}`).join(" ")}"/></svg>` : ""}`;
 }

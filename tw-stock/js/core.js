@@ -17,8 +17,21 @@ const staticKey = (path, params) => {
     .sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}-${v}`).join("_");
   return (path.replace(/\//g, "_") + (qs ? "__" + qs : "")).replace(/[^A-Za-z0-9_.=-]/g, "_");
 };
+const staticJson = (path, params) => fetch(`${BASE}data/${staticKey(path, params)}.json`).then((r) => (r.ok ? r.json() : null));
+// 公開版：產業篩選、搜尋沒有預先匯出，改用「全部個股」清單在瀏覽器端篩選排序（規則同 read_model.inst_ranking）
+async function staticStocks(p) {
+  const all = await staticJson("stocks", { days: p.days, investor: p.investor, order: "all", limit: 5000 });
+  if (!all) return null;
+  const net = `${p.investor}_net`, amt = `${p.investor}_amt`, q = (p.q || "").trim();
+  let rows = all.rows.filter((r) => (!p.industry || r.industry === p.industry)
+    && (!q || r.code.startsWith(q) || (r.name || "").includes(q)));
+  if (!q) rows = rows.filter((r) => (p.order === "sell" ? r[net] < 0 : r[net] > 0));
+  rows.sort((a, b) => (p.order === "sell" ? a[amt] - b[amt] : b[amt] - a[amt]));
+  return { ...all, rows: rows.slice(0, p.limit || 100) };
+}
 const api = (path, params = {}) => {
-  if (STATIC) return fetch(`${BASE}data/${staticKey(path, params)}.json`).then((r) => (r.ok ? r.json() : null));
+  if (STATIC && path === "stocks" && (params.industry || params.q)) return staticStocks(params);
+  if (STATIC) return staticJson(path, params);
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null));
   return fetch(`${BASE}api/${path}?${qs}`).then((r) => r.json());
 };

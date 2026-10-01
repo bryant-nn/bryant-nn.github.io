@@ -132,7 +132,7 @@ tr.self td { background: color-mix(in srgb, var(--accent) 10%, transparent); fon
 .band-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); gap: 6px; flex-wrap: wrap; }
 
 /* 公開快照版：隱藏需要後端的功能 */
-.static #industrySel, .static #searchBox, .static [data-watch] { display: none; }
+.static [data-watch] { display: none; }
 .run-status { font-size: 12px; margin-left: 10px; text-decoration: none; color: var(--muted); font-weight: 400; }
 .run-status.warn { color: #b7791f; } .run-status.fail { color: var(--up); font-weight: 600; }
 ul.checks li.info { color: var(--muted); }

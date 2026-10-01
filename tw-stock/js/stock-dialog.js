@@ -122,7 +122,7 @@ view.addEventListener("click", (e) => {
   const tr = e.target.closest("[data-code]");
   if (tr) return showDetail(tr.dataset.code);
   const ind = e.target.closest("[data-industry]");
-  if (ind && !STATIC) {                     // 公開版沒有匯出各產業的篩選結果
+  if (ind) {
     state.industry = ind.dataset.industry;
     switchTab("stocks");
   }

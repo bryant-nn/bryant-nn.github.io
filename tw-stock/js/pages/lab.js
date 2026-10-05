@@ -62,7 +62,12 @@ async function renderLab() {
     const f = labMeta.features.find((x) => x.key === s.value); s.closest(".lab-row").querySelector('[data-lab="v"]').value = f.example; }));
 
   if (!state.labq) { state.labq = labQuery(q); go({ push: false }); }
-  const res = await fetch(`${BASE}api/lab?${labQuery(q)}`).then((x) => x.json());
+  let res;
+  try {
+    res = await fetch(`${BASE}api/lab?${labQuery(q)}`).then(apiJson);
+  } catch (err) {
+    res = { error: err.message };
+  }
   if (state.tab !== "lab") return;
   $("#labResult").innerHTML = labResultHtml(res);
 }

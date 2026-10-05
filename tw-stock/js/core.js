@@ -33,8 +33,15 @@ const api = (path, params = {}) => {
   if (STATIC && path === "stocks" && (params.industry || params.q)) return staticStocks(params);
   if (STATIC) return staticJson(path, params);
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null));
-  return fetch(`${BASE}api/${path}?${qs}`).then((r) => r.json());
+  return fetch(`${BASE}api/${path}?${qs}`).then(apiJson);
 };
+// 網頁檔案每次都從硬碟讀取，但 Python 伺服器啟動後不會載入新程式：新功能的資料網址會是 404
+const OLD_SERVER = "網站伺服器是舊版本，沒有這個功能的資料。請重新啟動：在執行 twstock serve 的終端機按 Ctrl+C，再執行 uv run twstock serve";
+async function apiJson(r) {
+  const j = await r.json().catch(() => null);
+  if (r.status === 404 && j?.error === "not found") throw new Error(OLD_SERVER);
+  return j;
+}
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
 const lots = (shares) => (shares == null ? "-" : Math.round(shares / 1000).toLocaleString());          // 股 -> 張

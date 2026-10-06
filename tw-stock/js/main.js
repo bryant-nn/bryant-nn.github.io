@@ -5,7 +5,7 @@ async function render() {
   view.innerHTML = `<div class="empty">載入中…</div>`;
   try {
     await { summary: renderSummary, stocks: renderStocks, sectors: renderSectors, weights: renderWeights, etf: renderEtf,
-            signals: renderSignals, quant: renderQuant, smart: renderSmart, lab: renderLab, research: renderResearch }[state.tab]();
+            signals: renderSignals, quant: renderQuant, predict: renderPredict, smart: renderSmart, lab: renderLab, research: renderResearch }[state.tab]();
   } catch (err) {
     view.innerHTML = `<div class="empty">讀取失敗：${esc(err.message)}</div>`;
   }

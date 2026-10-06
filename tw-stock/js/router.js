@@ -6,10 +6,10 @@
 // /sectors?days=5&investor=foreign   /weights?days=1   /etf?days=5&kind=active   /signals
 // /stock/2330            個股視窗      /etf/00981A    ETF 持股視窗
 // 切換分頁、開關視窗會新增瀏覽紀錄（上一頁可回去）；切換篩選條件只更新網址，不新增紀錄。
-const TABS = { summary: "每日摘要", stocks: "個股", sectors: "板塊", weights: "權值股", etf: "ETF 持股", signals: "主力訊號", quant: "量化選股", smart: "聰明錢", lab: "訊號實驗室", research: "個股研究" };
+const TABS = { summary: "每日摘要", stocks: "個股", sectors: "板塊", weights: "權值股", etf: "ETF 持股", signals: "主力訊號", quant: "量化選股", predict: "預測選股", smart: "聰明錢", lab: "訊號實驗室", research: "個股研究" };
 const DEFAULTS = { days: 1, inv: "total", order: "buy", industry: "", q: "", kind: "", rcode: "", labq: "" };
 const QS = { days: "days", inv: "investor", order: "order", industry: "industry", q: "q", kind: "kind" };
-const TAB_FILTERS = { summary: [], signals: [], quant: [], smart: [], lab: [], research: [], stocks: ["days", "inv", "order", "industry", "q"],
+const TAB_FILTERS = { summary: [], signals: [], quant: [], predict: [], smart: [], lab: [], research: [], stocks: ["days", "inv", "order", "industry", "q"],
                       sectors: ["days", "inv"], weights: ["days", "inv"], etf: ["days", "kind"] };
 const SITE = "台股法人動向";
 let detail = null;   // 開著的視窗 {type: "stock" | "etf", code}
@@ -120,7 +120,7 @@ $("#searchBox").addEventListener("input", (e) => {
 
 function updateControls() {
   const c = $("#controls");
-  c.classList.toggle("hidden", ["summary", "signals", "quant", "smart", "lab", "research"].includes(state.tab));
+  c.classList.toggle("hidden", ["summary", "signals", "quant", "predict", "smart", "lab", "research"].includes(state.tab));
   c.classList.toggle("hide-order", state.tab !== "stocks");
   c.classList.toggle("hide-inv", state.tab === "etf");
   c.classList.toggle("hide-kind", state.tab !== "etf");

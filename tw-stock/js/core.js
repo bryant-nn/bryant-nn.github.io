@@ -26,7 +26,8 @@ async function staticStocks(p) {
   let rows = all.rows.filter((r) => (!p.industry || r.industry === p.industry)
     && (!q || r.code.startsWith(q) || (r.name || "").includes(q)));
   if (!q) rows = rows.filter((r) => (p.order === "sell" ? r[net] < 0 : r[net] > 0));
-  rows.sort((a, b) => (p.order === "sell" ? a[amt] - b[amt] : b[amt] - a[amt]));
+  const v = (r) => r[amt] ?? (p.order === "sell" ? Infinity : -Infinity);   // 沒成交（金額空值）排最後
+  rows.sort((a, b) => (p.order === "sell" ? v(a) - v(b) : v(b) - v(a)));
   return { ...all, rows: rows.slice(0, p.limit || 100) };
 }
 const api = (path, params = {}) => {

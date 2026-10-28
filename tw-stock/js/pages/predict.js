@@ -1,7 +1,6 @@
 // 預測選股：LightGBM 預測「未來 20 日跑贏全市場」的機率；樣本外績效、和只看營收比較、機率準不準、今日排行與原因。
 
 async function renderPredict() {
-  if (STATIC) return (view.innerHTML = `<div class="empty">預測選股只在本機網站提供。</div>`);
   const r = await api("predict");
   if (!r || r.empty) return (view.innerHTML = `<div class="empty">${esc(r?.reason || "還沒有預測結果")}</div>`);
   const s = r.summary;

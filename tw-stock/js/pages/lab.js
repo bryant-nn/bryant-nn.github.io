@@ -17,8 +17,7 @@ function labQuery({ conds, first, market }) {
 }
 
 async function renderLab() {
-  if (STATIC) return (view.innerHTML = `<div class="empty">訊號實驗室需要即時計算，只能在本機網站使用。</div>`);
-  labMeta = labMeta || (await api("lab-features"));
+  labMeta = labMeta || (STATIC ? await labLoadMeta() : await api("lab-features"));
   const q = labParse(state.labq);
   if (!q.conds.length) q.conds = [{ f: "trust_streak", op: ">=", v: "3" }, { f: "rev_yoy", op: ">", v: "30" }];
   const groups = [...new Set(labMeta.features.map((f) => f.group))];
@@ -35,7 +34,7 @@ async function renderLab() {
         <select id="labMarket">${[["all", "上市＋上櫃"], ["TWSE", "只看上市"], ["TPEX", "只看上櫃"]].map(([v, l]) => `<option value="${v}"${v === q.market ? " selected" : ""}>${l}</option>`).join("")}</select>
         <button class="btn primary" id="labRun">開始回測</button></div>
       <div class="note">只用當天以前、已公布的資料；隔天開盤買、持有 N 日收盤賣，還原權息、扣 0.585% 交易成本，和全市場比較。只看成交金額 1 億以上。</div></div>
-    <div id="labResult"><div class="empty">計算中…（第一次用到技術指標約需 10 秒）</div></div>`;
+    <div id="labResult"><div class="empty">計算中…（${STATIC ? "第一次使用要下載約 10 MB 歷史資料，之後會快取" : "第一次用到技術指標約需 10 秒"}）</div></div>`;
 
   const read = () => ({
     conds: [...document.querySelectorAll("#labRows .lab-row")].map((r) => ({
@@ -64,7 +63,7 @@ async function renderLab() {
   if (!state.labq) { state.labq = labQuery(q); go({ push: false }); }
   let res;
   try {
-    res = await fetch(`${BASE}api/lab?${labQuery(q)}`).then(apiJson);
+    res = STATIC ? await labStatic(q) : await fetch(`${BASE}api/lab?${labQuery(q)}`).then(apiJson);   // 公開版在瀏覽器裡算
   } catch (err) {
     res = { error: err.message };
   }
@@ -95,4 +94,98 @@ function labResultHtml(r) {
           ${r.recent.map((e) => `<tr data-code="${esc(e.code)}"><td class="muted">${esc(e.date)}</td><td class="name">${esc(e.code)}<small>${esc(e.name)}</small></td>
             ${[5, 20, 60].map((h) => `<td class="num ${cls(e["excess" + h])}">${e["excess" + h] == null ? "未滿" : pct(e["excess" + h])}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<div class="muted">無</div>`}</div>
     </div>`;
+}
+
+// ---------- 公開版：在瀏覽器裡回測（規則同 application/lab.py、domain/backtest.py） ----------
+// 資料由 twstock/adapters/inbound/static_lab.py 匯出：data/lab/<欄位>/<YYYY-MM>.bin
+// （特徵 Float64、報酬 r*/x* Float32、_date／_stock Uint16）
+let labStaticMeta = null;
+const labColCache = {};
+
+async function labLoadMeta() {
+  labStaticMeta = labStaticMeta || (await fetch(`${BASE}data/lab/meta.json`).then((r) => r.json()));
+  return labStaticMeta;
+}
+
+function labCol(meta, col) {
+  if (!labColCache[col]) {
+    const T = col.startsWith("_") ? Uint16Array : /^[rx]\d+$/.test(col) ? Float32Array : Float64Array;
+    labColCache[col] = Promise.all(meta.months.map((m) => fetch(`${BASE}data/lab/${col}/${m}.bin`).then((r) => r.arrayBuffer())))
+      .then((bufs) => {
+        const parts = bufs.map((b) => new T(b));
+        const out = new T(parts.reduce((a, p) => a + p.length, 0));
+        let o = 0;
+        for (const p of parts) { out.set(p, o); o += p.length; }
+        return out;
+      });
+  }
+  return labColCache[col];
+}
+
+const LAB_FNS = { ">": (a, b) => a > b, ">=": (a, b) => a >= b, "<": (a, b) => a < b, "<=": (a, b) => a <= b };
+
+function labRound(x, d = 2) { return Math.round(x * 10 ** d) / 10 ** d; }
+
+function labSummarize(rets, exc, dates) {
+  const n = rets.length;
+  if (!n) return { n: 0, days: 0 };
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const byDay = new Map();
+  dates.forEach((d, i) => { if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(exc[i]); });
+  const daily = [...byDay.values()].map(mean);
+  const md = mean(daily);
+  const sd = daily.length > 1 ? Math.sqrt(daily.reduce((s, x) => s + (x - md) ** 2, 0) / (daily.length - 1)) : 0;
+  const t = sd ? md / (sd / Math.sqrt(daily.length)) : 0;
+  const sorted = [...rets].sort((a, b) => a - b);
+  const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  const meanEx = mean(exc);
+  const verdict = n < 30 || daily.length < 20 ? "樣本不足"
+    : t >= 2 && meanEx > 0 ? "有效：出現後跑贏大盤" : t <= -2 && meanEx < 0 ? "反向：出現後跑輸大盤" : "沒有明顯效果";
+  return { days: daily.length, n, mean: labRound(mean(rets)), median: labRound(median), win: labRound((rets.filter((r) => r > 0).length / n) * 100, 1),
+           excess: labRound(meanEx), excess_win: labRound((exc.filter((e) => e > 0).length / n) * 100, 1), t: labRound(t), verdict };
+}
+
+async function labStatic(q) {
+  const meta = await labLoadMeta();
+  const conds = q.conds.map((c) => ({ f: c.f, op: c.op, v: Number(c.v) }));
+  const H = meta.horizons;
+  const need = ["_date", "_stock", "_prev", ...new Set(conds.map((c) => c.f)), ...H.map((h) => "r" + h), ...H.map((h) => "x" + h)];
+  const cols = Object.fromEntries(await Promise.all(need.map(async (c) => [c, await labCol(meta, c)])));
+  const D = cols._date, S = cols._stock, P = cols._prev, last = meta.dates.length - 1;
+  const matchedAt = new Map();          // 股票 -> 最近一次符合條件的日期索引
+  const ev = Object.fromEntries(H.map((h) => [h, { d: [], r: [], x: [] }]));
+  const today = [], recent = [];
+  let events = 0;
+  for (let k = 0; k < D.length; k++) {
+    const d = D[k], s = S[k];
+    const st = meta.stocks[s];
+    if (q.market !== "all" && st.market !== q.market) continue;
+    let ok = true;
+    for (const c of conds) { const x = cols[c.f][k]; if (Number.isNaN(x) || !LAB_FNS[c.op](x, c.v)) { ok = false; break; } }
+    if (!ok) continue;
+    const wasMatched = matchedAt.get(s) === P[k];             // 這檔股票前一筆行情也符合條件
+    matchedAt.set(s, d);
+    if (q.first && wasMatched) continue;                     // 只算條件「剛成立」那天
+    if (d === last) {
+      const lq = meta.last_quotes[s] || [];
+      today.push({ code: st.code, name: st.name, industry: st.industry, market: st.market, close: lq[0], chg_1: lq[1] == null ? null : labRound(lq[1]),
+                   values: Object.fromEntries(conds.map((c) => [c.f, Number.isNaN(cols[c.f][k]) ? null : labRound(cols[c.f][k])])) });
+      continue;
+    }
+    events++;
+    const e = { date: meta.dates[d], code: st.code, name: st.name };
+    for (const h of H) {
+      const r = cols["r" + h][k], x = cols["x" + h][k];
+      if (!Number.isNaN(r) && !Number.isNaN(x)) { ev[h].d.push(d); ev[h].r.push(r); ev[h].x.push(x); e["excess" + h] = labRound(x); }
+    }
+    recent.push(e);
+  }
+  const FN = Object.fromEntries(meta.features.map((f) => [f.key, f]));
+  recent.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return {
+    conditions: conds.map((c) => ({ ...c, text: `${FN[c.f].name} ${c.op} ${c.v}${FN[c.f].unit}` })),
+    first_only: q.first, market: q.market, start: meta.start, end: meta.last, events,
+    results: H.map((h) => ({ ...labSummarize(ev[h].r, ev[h].x, ev[h].d), horizon: h })),
+    today: today.sort((a, b) => (a.code < b.code ? -1 : 1)), recent: recent.slice(0, 40),
+  };
 }
